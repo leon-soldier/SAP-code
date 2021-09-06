@@ -1,0 +1,371 @@
+
+  DATA: lv_msg(100) TYPE c,
+        ls_kna1     TYPE kna1,
+        lv_kunnr    TYPE kna1-kunnr,
+        ls_zsdt005  TYPE zsdt005,
+        lv_vbeln    TYPE bapivbeln-vbeln,
+        lv_posnr    TYPE vbap-posnr,
+        ls_edit     TYPE lvc_s_styl,
+        lt_edit     TYPE lvc_t_styl.
+
+  DATA: ls_head_in        TYPE bapisdhd1,
+        ls_head_inx       TYPE bapisdhd1x,
+        lt_items_in       TYPE TABLE OF bapisditm,
+        ls_items_in       TYPE bapisditm,
+        lt_items_inx      TYPE TABLE OF bapisditmx,
+        ls_items_inx      TYPE bapisditmx,
+        lt_partners       TYPE TABLE OF bapiparnr,
+        ls_partners       TYPE bapiparnr,
+        lt_schedules_in   TYPE TABLE OF bapischdl,
+        ls_schedules_in   TYPE bapischdl,
+        lt_schedules_inx  TYPE TABLE OF bapischdlx,
+        ls_schedules_inx  TYPE bapischdlx,
+        lt_conditions_in  TYPE TABLE OF bapicond,
+        ls_conditions_in  TYPE bapicond,
+        lt_conditions_inx TYPE TABLE OF bapicondx,
+        ls_conditions_inx TYPE bapicondx,
+        lt_extensionin    TYPE TABLE OF bapiparex,
+        ls_extensionin    TYPE bapiparex,
+        lt_text           TYPE TABLE OF bapisdtext,
+        ls_text           TYPE bapisdtext,
+        lt_return         TYPE TABLE OF bapiret2,
+        ls_return         TYPE bapiret2,
+        lt_kortab         TYPE TABLE OF mdvu,
+        ls_kortab         TYPE mdvu.
+
+  DATA: ls_bape_vbak  TYPE bape_vbak, "屏幕增强字段
+        ls_bape_vbakx TYPE bape_vbakx.
+  DATA: ls_bape_vbap  TYPE bape_vbap, "屏幕增强字段
+        ls_bape_vbapx TYPE bape_vbapx.
+
+*"----------------------------------------------------------------------
+* 销售订单抬头数据
+*"----------------------------------------------------------------------
+  CLEAR gs_data.
+  READ TABLE gt_data INTO gs_data WITH KEY zsel = 'X' kunnr = pv_kunnr.
+  "客户编号
+  lv_kunnr = gs_data-kunnr.
+
+  ls_head_in-purch_no_c = gs_data-remark.        "客户采购订单编号
+  ls_head_in-purch_no_s = gs_data-bookingid.       "运达方采购订单编号    PO号
+  ls_head_in-doc_type = 'ZJR'.          "销售凭证类型
+
+  ls_head_in-sales_org = '2016'.         "销售组织
+  ls_head_in-distr_chan = '10'.        "分销渠道
+
+  ls_head_in-division = '20'.          "产品组
+  ls_head_in-doc_date = sy-datum.              "凭证日期，创建日期
+  ls_head_in-created_by = sy-uname.            "订单创建人
+  ls_head_in-req_date_h = sy-datum.           "交货日期
+  ls_head_in-price_date = sy-datum.     "定价日期和汇率
+  ls_head_in-currency = 'CNY'.  "SD 凭证货币
+  TRANSLATE ls_head_in-currency TO UPPER CASE.
+
+  "销售订单抬头字段确认
+  ls_head_inx-purch_no_c = 'X'.                "采购订单编号
+  ls_head_inx-purch_no_s = 'X'.                "采购订单编号
+  ls_head_inx-doc_type = 'X'.                  "销售凭证类型
+  ls_head_inx-sales_org = 'X'.                 "销售组织
+  ls_head_inx-distr_chan = 'X'.                "分销渠道
+  ls_head_inx-division = 'X'.                  "产品组
+  ls_head_inx-doc_date = 'X'.                  "凭证日期
+  ls_head_inx-req_date_h = 'X'.                "交货日期
+  ls_head_inx-price_date = 'X'.      "定价日期和汇率
+  ls_head_inx-currency = 'X'.
+
+***合作伙伴
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_INPUT'
+    EXPORTING
+      input  = lv_kunnr
+    IMPORTING
+      output = lv_kunnr.
+
+  ls_partners-partn_role = 'AG'.     "售达方
+  ls_partners-partn_numb = lv_kunnr.
+  APPEND ls_partners TO lt_partners.
+  CLEAR ls_partners.
+  ls_partners-partn_role = 'WE'.      "送达方
+  ls_partners-partn_numb = lv_kunnr.
+  ls_partners-country = 'CN'.
+
+  CLEAR ls_kna1.
+  SELECT SINGLE * INTO ls_kna1 FROM kna1 WHERE kunnr =  lv_kunnr.
+  ls_partners-name = ls_kna1-name1.
+  ls_partners-postl_code = ls_kna1-pstlz.
+  ls_partners-city = ls_kna1-ort01.
+  ls_partners-langu = ls_kna1-spras.
+
+  "取地址信息
+  CLEAR ls_zsdt005.
+  SELECT SINGLE *
+    FROM zsdt005
+    INTO ls_zsdt005
+   WHERE lgortno = gs_data-lgortno.
+
+  IF sy-subrc = 0.
+
+    CONCATENATE ls_zsdt005-street
+                ls_zsdt005-str_suppl1
+                ls_zsdt005-str_suppl2
+                ls_zsdt005-str_suppl3
+           INTO ls_partners-street.       "送达地址
+  ENDIF.
+
+  ls_partners-region = ls_zsdt005-region. "地区
+  ls_partners-transpzone = ls_zsdt005-transpzone."运输区域
+  TRANSLATE ls_partners-transpzone TO UPPER CASE.
+
+  APPEND ls_partners TO lt_partners.
+  CLEAR ls_partners.
+
+  ls_partners-partn_role = 'RE'.     "收票方
+  ls_partners-partn_numb = lv_kunnr.
+  APPEND ls_partners TO lt_partners.
+  CLEAR ls_partners.
+
+  ls_partners-partn_role = 'RG'.       "付款方
+  ls_partners-partn_numb = lv_kunnr.
+  APPEND ls_partners TO lt_partners.
+  CLEAR ls_partners.
+
+** 抬头增强
+  CLEAR: ls_extensionin,ls_bape_vbak.
+  ls_extensionin-structure = 'BAPE_VBAK'.
+  ls_bape_vbak-zppdy = 'CD01'.      "品牌单元
+  ls_extensionin+30(960) = ls_bape_vbak.
+  APPEND ls_extensionin TO lt_extensionin.
+
+
+  CLEAR: ls_extensionin,ls_bape_vbakx.
+  ls_extensionin-structure = 'BAPE_VBAKX'.
+  ls_bape_vbakx-zppdy = 'X'.
+  ls_extensionin+30(960) = ls_bape_vbakx.
+  APPEND ls_extensionin TO lt_extensionin.
+
+
+*"----------------------------------------------------------------------
+* 销售订单行项目数据
+*"----------------------------------------------------------------------
+  "可用性检查
+  DATA:lv_meins   TYPE mara-meins,
+       lv_flag    TYPE bapicm61v-diafl,
+       lt_wmdvsx  TYPE TABLE OF bapiwmdvs,
+       ls_wmdvsx  TYPE bapiwmdvs,
+       lt_zsdt007 TYPE TABLE OF zsdt007,
+       ls_zsdt007 TYPE zsdt007,
+       lt_wmdvex  TYPE TABLE OF bapiwmdve.
+
+  CLEAR :lv_msg.
+  LOOP AT gt_data INTO gs_data WHERE cfmmg > 0.
+    lv_posnr = lv_posnr + 10.
+
+    "记录日志
+    ls_zsdt007-posnr    = lv_posnr.
+    ls_zsdt007-thitemid = gs_data-thitemid.
+    ls_zsdt007-thmno    = gs_data-thmno.
+    ls_zsdt007-bookingid    = gs_data-bookingid.
+
+    APPEND ls_zsdt007 TO lt_zsdt007.
+    CLEAR ls_zsdt007.
+
+    CLEAR :ls_items_in,lv_meins.
+
+    SELECT SINGLE meins INTO lv_meins FROM mara WHERE matnr = gs_data-matnr.
+
+    ls_items_in-itm_number = lv_posnr.                    "销售订单行项目编号
+    ls_items_in-material   = gs_data-matnr.             "物料
+
+    ls_items_in-item_categ = 'ZJR'.           "销售凭证项目类别
+    ls_items_in-store_loc = gs_data-lgort_i.           "库存地点
+
+    ls_items_in-target_qty = gs_data-cfmmg.                "订单数量
+
+    ls_items_in-sales_unit = lv_meins.                "销售单位
+
+    ls_items_in-plant      = gs_data-werks.             "工厂
+    APPEND ls_items_in TO lt_items_in.
+
+    CLEAR ls_items_inx.
+    ls_items_inx-itm_number = lv_posnr.                     "销售订单行项目编号
+    ls_items_inx-material   = 'X'.             "物料
+    ls_items_inx-item_categ = 'X'.                "销售凭证项目类别
+    ls_items_inx-target_qty = 'X'.                "订单数量
+    ls_items_inx-sales_unit = 'X'.
+    ls_items_inx-plant      = 'X'.                  "工厂
+
+    ls_items_inx-store_loc = 'X'.           "库存地点
+
+
+    APPEND ls_items_inx TO lt_items_inx.
+
+***计划行
+    CLEAR  ls_schedules_in.
+    ls_schedules_in-itm_number   = lv_posnr.           "销售订单行项目编号
+    ls_schedules_in-req_date      =  sy-datum.   "计划交货日期
+    ls_schedules_in-req_qty      = gs_data-cfmmg.         "订单数量
+    APPEND ls_schedules_in TO lt_schedules_in.
+
+    CLEAR  ls_schedules_inx.
+    ls_schedules_inx-itm_number   = lv_posnr.      "销售订单行项目编号
+    ls_schedules_inx-req_date      = 'X'.                "计划交货日期
+    ls_schedules_inx-req_qty      = 'X'.                "订单数量
+    APPEND ls_schedules_inx TO lt_schedules_inx.
+
+    "计划行中数量设置为0
+    CLEAR ls_kortab.
+    ls_kortab-posnr = lv_posnr.
+    ls_kortab-mbdat = sy-datum.
+    ls_kortab-vmeng = 0.
+    APPEND ls_kortab TO lt_kortab.
+
+  ENDLOOP.
+
+  CHECK lt_items_in IS NOT INITIAL.
+
+
+*"----------------------------------------------------------------------
+* 调用BAPI创建销售订单
+*"----------------------------------------------------------------------
+  DATA: lv_testrun TYPE bapiflag-bapiflag VALUE 'X'.    "测试运行
+**  一般销售订单
+  CALL FUNCTION 'SD_SALESDOCUMENT_CREATE'
+    EXPORTING
+      sales_header_in     = ls_head_in
+      sales_header_inx    = ls_head_inx
+      testrun             = lv_testrun
+    TABLES
+      return              = lt_return
+      sales_items_in      = lt_items_in
+      sales_items_inx     = lt_items_inx
+      sales_partners      = lt_partners
+      sales_schedules_in  = lt_schedules_in
+      sales_schedules_inx = lt_schedules_inx
+      extensionin         = lt_extensionin.
+
+*  CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+*    EXPORTING
+*      order_header_in     = ls_head_in
+*      order_header_inx    = ls_head_inx
+*      testrun             = lv_testrun
+*    TABLES
+*      return              = lt_return
+*      order_items_in      = lt_items_in
+*      order_items_inx     = lt_items_inx
+*      order_partners      = lt_partners
+*      order_schedules_in  = lt_schedules_in
+*      order_schedules_inx = lt_schedules_inx
+*      extensionin         = lt_extensionin.
+
+*"----------------------------------------------------------------------
+* 消息处理
+*"----------------------------------------------------------------------
+  CLEAR :lv_msg.
+  LOOP AT lt_return INTO ls_return WHERE type CA 'AEX'.
+    IF lv_msg IS INITIAL.
+      lv_msg = ls_return-message.
+    ELSE.
+      lv_msg = lv_msg && ls_return-message.
+    ENDIF.
+
+    gs_data-status = icon_red_light.    "红色错误
+  ENDLOOP.
+
+  IF gs_data-status = icon_red_light.
+    CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+
+    IF gs_data-msgtx IS INITIAL.
+      gs_data-msgtx = lv_msg  .
+    ELSE.
+      gs_data-msgtx = gs_data-msgtx && ';' && lv_msg  .
+    ENDIF.
+  ELSE.
+    lv_testrun = ''.
+
+    CLEAR lv_vbeln.
+
+    CALL FUNCTION 'SD_SALESDOCUMENT_CREATE'
+      EXPORTING
+        sales_header_in     = ls_head_in
+        sales_header_inx    = ls_head_inx
+        testrun             = lv_testrun
+      IMPORTING
+        salesdocument_ex    = lv_vbeln
+      TABLES
+        return              = lt_return
+        sales_items_in      = lt_items_in
+        sales_items_inx     = lt_items_inx
+        sales_partners      = lt_partners
+        sales_schedules_in  = lt_schedules_in
+        sales_schedules_inx = lt_schedules_inx
+        extensionin         = lt_extensionin.
+
+*    CALL FUNCTION 'BAPI_SALESORDER_CREATEFROMDAT2'
+*      EXPORTING
+*        order_header_in     = ls_head_in
+*        order_header_inx    = ls_head_inx
+*        testrun             = lv_testrun
+*      IMPORTING
+*        salesdocument       = lv_vbeln
+*      TABLES
+*        return              = lt_return
+*        order_items_in      = lt_items_in
+*        order_items_inx     = lt_items_inx
+*        order_partners      = lt_partners
+*        order_schedules_in  = lt_schedules_in
+*        order_schedules_inx = lt_schedules_inx
+*        extensionin         = lt_extensionin.
+
+    gs_data-vbeln_i = lv_vbeln.
+
+    CLEAR :lv_msg.
+    LOOP AT lt_return INTO ls_return WHERE type CA 'AEX'.
+      IF lv_msg IS INITIAL.
+        lv_msg = ls_return-message.
+      ELSE.
+        lv_msg = lv_msg && ls_return-message.
+      ENDIF.
+      gs_data-status = icon_red_light.    "红色错误
+    ENDLOOP.
+
+    IF gs_data-status = icon_red_light.
+      CALL FUNCTION 'BAPI_TRANSACTION_ROLLBACK'.
+      IF gs_data-msgtx IS INITIAL.
+        gs_data-msgtx = lv_msg  .
+      ELSE.
+        gs_data-msgtx = gs_data-msgtx && ';' && lv_msg  .
+      ENDIF.
+
+    ELSE.
+      lv_msg = '换入单' && gs_data-vbeln_i && '创建成功！'.
+      gs_data-msgtx = lv_msg  .
+      gs_data-status = icon_green_light.
+
+      "记录日志
+      LOOP AT lt_zsdt007 INTO ls_zsdt007.
+        ls_zsdt007-vbeln = lv_vbeln.
+        ls_zsdt007-zzernam = sy-uname.
+        ls_zsdt007-zzerdat = sy-datum.
+        ls_zsdt007-zzertim = sy-uzeit.
+        MODIFY lt_zsdt007 FROM ls_zsdt007.
+      ENDLOOP.
+
+      MODIFY zsdt007 FROM TABLE lt_zsdt007.
+
+      CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+        EXPORTING
+          wait = 'X'.
+
+      "途虎接口确认单数为0
+      ls_kortab-vbeln = gs_data-vbeln_i.
+      MODIFY lt_kortab FROM ls_kortab TRANSPORTING vbeln WHERE vbeln IS INITIAL.
+
+      CLEAR lt_return.
+
+*          CALL FUNCTION 'SD_BACKORDER_UPDATE'
+*            TABLES
+*              kortab    = lt_kortab
+*              et_return = lt_return.
+
+    ENDIF.
+
+  ENDIF.
